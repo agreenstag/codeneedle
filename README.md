@@ -245,8 +245,9 @@ Per-function diff uses colors matching the video:
 
 - **gray**       — matched line (expected + produced at correct position)
 - **orange**     — expected but missing from the output
-- **yellow**     — hallucinated / mangled line
-- **blue/cyan**  — extra correct lines past the primary 20 (bonus)
+- **yellow**     — truely hallucinated garbage / mangled line
+- **cyan**       — indentation issue
+- **blue**  — extra correct lines past the primary 20 (bonus)
 
 Pass threshold per function: ≥ 8 of the 20 expected lines matched.
 
@@ -347,3 +348,92 @@ uv run pytest
 - `analysis/visualize.py` — builds Plotly HTML dashboards from `results/*.json`
   (see [`analysis/VIZ_README.md`](analysis/VIZ_README.md) for chart-by-chart details)
 - `smoke_test.py` — end-to-end sanity check without an LLM
+
+## Benchmark fault domain improvements
+
+This fork extends the original CodeNeedle benchmark with richer diagnostics while preserving strict verbatim-recall scoring.
+
+### What's Changed
+
+Added separate Documentation Recall and Code Recall metrics.
+Added Indent Violations tracking.
+Added True Hallucinations tracking.
+Fixed handling of single-line docstrings.
+Added detection of a known chat-template docstring indentation artifact.
+Added analysis tags to identify common recall patterns and failure modes.
+
+### Why
+
+The original benchmark could tell you that a function scored poorly, but not why.
+
+The enhanced benchmark can now distinguish between:
+
+Strong code recall but weak documentation recall.
+Correct content recalled with incorrect indentation.
+Genuine hallucinated content.
+Known formatting artifacts introduced by chat templates.
+
+This provides a much clearer picture of model behaviour without relaxing the benchmark's verbatim-recall requirements.
+
+### Template Artifact Handling
+
+Some chat-oriented models consistently emit the first docstring line flush-left, stripping the original function-body indentation while otherwise recalling the content correctly.
+
+Expected:
+
+ """Parse a request (internal).
+
+Generated:
+
+  """Parse a request (internal).
+
+When this occurs and all of the following are true:
+
+Exactly one indentation violation exists.
+Documentation recall misses exactly one line.
+Code recall is perfect.
+The only difference is the missing leading indentation on the first docstring line.
+
+The benchmark applies a narrow correction and records:
+
+template_correction_applied
+
+This compensates for a repeatable formatting artifact rather than a genuine recall failure.
+
+### New Metrics
+
+Overall Recall – original CodeNeedle score.
+Doc Recall – documentation lines recovered.
+Code Recall – implementation lines recovered.
+Indent Violations – recalled lines with incorrect indentation.
+True Hallucinations – genuinely unsupported/generated content.
+Bonus Matches – correct lines recovered beyond the primary recall window.
+
+### Analysis Tags
+
+Examples include:
+
+template_correction_applied
+perfect_verbatim_recall
+strong_docstring_recall
+strong_code_recall
+total_docstring_loss
+partial_docstring_loss
+code_recall_failure
+partial_code_recall
+critical_code_recall_failure
+indentation_drift
+severe_indentation_drift
+hallucinations_present
+high_hallucination_rate
+
+### Design Philosophy
+
+The benchmark remains intentionally strict:
+
+Indentation is still significant.
+Verbatim matching remains the source of truth.
+Indentation is not globally relaxed.
+Formatting mistakes are reported separately from hallucinations.
+
+The only scoring adjustment is the narrowly scoped template_correction_applied rule, which compensates for a known and repeatable chat-template formatting artifact affecting the first docstring line.

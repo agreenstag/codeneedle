@@ -23,3 +23,14 @@ venv/
 # Benchmark outputs — each user generates their own
 results/*.json
 analysis/charts/
+configs/models/Qwen3.5-9B-MoQ-6.6.toml
+configs/models/Qwen3.5-9B-Q4_K_M.toml
+configs/models/qwen35-9b.toml
+configs/models/qwen35-9b.toml
+.gitignore
+configs/models/Qwen3.5-9B-MoQ-5.3.toml
+configs/models/Qwen3.5-9B-Revised-q4_k_m.toml
+configs/models/Qwen2.5-Coder-7B-Instruct-Q4_K_L.toml
+configs/models/NextCoder-7B-Q8_0.toml
+configs/models/gpt-oss-nano.toml
+configs/models/cortana.toml

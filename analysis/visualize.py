@@ -14,6 +14,8 @@ Layout: one chart per page, grouped under a per-corpus subfolder.
 Each chart sizes itself to the data and reserves enough room for a vertical
 legend with up to 20 model entries. Every chart is fully interactive — hover,
 zoom, pan, click-to-toggle-trace, double-click-to-isolate.
+
+Updated to show the seperate doc / code / indent scores + percent.
 """
 from __future__ import annotations
 
@@ -150,15 +152,36 @@ def leaderboard(runs: list[Run], colors: dict[str, str]):
     for r in runs:
         matched = sum(x.get("primary_matched", 0) for x in r.data["results"])
         total = sum(x.get("primary_total", 0) for x in r.data["results"])
+
+        doc_matched = sum(x.get("doc_matched", 0) for x in r.data["results"])
+        doc_total = sum(x.get("doc_total", 0) for x in r.data["results"])
+
+        code_matched = sum(x.get("code_matched", 0) for x in r.data["results"])
+        code_total = sum(x.get("code_total", 0) for x in r.data["results"])
+
+        indent = sum(
+            x.get("indentation_violations", x.get("reindented", 0))
+            for x in r.data["results"]
+        )
+
         passed = sum(1 for x in r.data["results"] if x.get("passed"))
         queries = len(r.data["results"])
         halluc = sum(x.get("hallucinated", 0) for x in r.data["results"])
         errored = sum(1 for x in r.data["results"] if x.get("error"))
         rows.append({
-            "model": r.model, "stem": r.path.stem,
-            "matched": matched, "total": total,
-            "passed": passed, "queries": queries,
-            "halluc": halluc, "errored": errored,
+            "model": r.model,
+            "stem": r.path.stem,
+            "matched": matched,
+            "total": total,
+            "doc_matched": doc_matched,
+            "doc_total": doc_total,
+            "code_matched": code_matched,
+            "code_total": code_total,
+            "indent": indent,
+            "passed": passed,
+            "queries": queries,
+            "halluc": halluc,
+            "errored": errored,
         })
     rows.sort(key=lambda d: d["matched"], reverse=True)
 
@@ -170,15 +193,47 @@ def leaderboard(runs: list[Run], colors: dict[str, str]):
     fig = go.Figure()
     for row in rows:
         annotation = (
-            f"{row['matched']}/{row['total']} lines · "
+            f"{row['matched']}/{row['total']} strict · "
             f"{row['passed']}/{row['queries']} pass · "
+            f"{row['indent']} indent · "
             f"{row['halluc']} halluc"
-            + (f" · {row['errored']} err" if row['errored'] else "")
+            + (f" · {row['errored']} err" if row["errored"] else "")
         )
+        strict_pct = (
+            row["matched"] / row["total"] * 100
+            if row["total"]
+            else 0.0
+        )
+
+        doc_pct = (
+            row["doc_matched"] / row["doc_total"] * 100
+            if row["doc_total"]
+            else 0.0
+        )
+
+        code_pct = (
+            row["code_matched"] / row["code_total"] * 100
+            if row["code_total"]
+            else 0.0
+        )
+
+        indent_pct = (
+            row["indent"] / row["total"] * 100
+            if row["total"]
+            else 0.0
+        )
+
         hover = (
             f"<b>{row['model']}</b><br>"
             f"file: {row['stem']}<br>"
-            f"matched: {row['matched']} / {row['total']}<br>"
+            f"primary lines matched: {row['matched']} / {row['total']} "
+            f"({strict_pct:.1f}%)<br>"
+            f"documentation recall: {row['doc_matched']} / {row['doc_total']} "
+            f"({doc_pct:.1f}%)<br>"
+            f"code recall: {row['code_matched']} / {row['code_total']} "
+            f"({code_pct:.1f}%)<br>"
+            f"indent violations: {row['indent']} / {row['total']} "
+            f"({indent_pct:.1f}%)<br>"
             f"pass: {row['passed']} / {row['queries']}<br>"
             f"hallucinated: {row['halluc']}<br>"
             f"errored: {row['errored']}"
@@ -235,24 +290,93 @@ def per_function_bars(runs: list[Run], colors: dict[str, str]):
     total_max = 20
     for r in runs:
         y = []
+        customdata = []
+
         for fn in fns:
-            x = next((z for z in r.data["results"] if z["function"] == fn), None)
-            if x is None or x.get("error"):
+            result = next(
+                (
+                    item
+                    for item in r.data["results"]
+                    if item["function"] == fn
+                ),
+                None,
+            )
+
+            if result is None or result.get("error"):
                 y.append(None)
-            else:
-                y.append(x.get("primary_matched", 0))
-                total_max = max(total_max, x.get("primary_total", 20))
+                customdata.append([
+                    r.path.stem,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    "",
+                    "ERROR",
+                ])
+                continue
+
+            primary_matched = result.get("primary_matched", 0)
+            primary_total = result.get("primary_total", 20)
+
+            doc_matched = result.get("doc_matched", 0)
+            doc_total = result.get("doc_total", 0)
+
+            code_matched = result.get("code_matched", 0)
+            code_total = result.get("code_total", 0)
+
+            indent = result.get(
+                "indentation_violations",
+                result.get("reindented", 0),
+            )
+            halluc = result.get("hallucinated", 0)
+            bonus = result.get("bonus_matched", 0)
+
+            tags = ", ".join(result.get("analysis_tags", []))
+            status = "PASS" if result.get("passed") else "FAIL"
+
+            y.append(primary_matched)
+            total_max = max(total_max, primary_total)
+
+            customdata.append([
+                r.path.stem,       # 0
+                primary_matched,   # 1
+                primary_total,     # 2
+                doc_matched,       # 3
+                doc_total,         # 4
+                code_matched,      # 5
+                code_total,        # 6
+                indent,            # 7
+                halluc,            # 8
+                bonus,             # 9
+                tags,              # 10
+                status,            # 11
+            ])
+
         fig.add_bar(
-            x=fns, y=y,
+            x=fns,
+            y=y,
             name=r.model,
             legendgroup=r.model,
             marker_color=colors[r.model],
-            customdata=[r.path.stem] * len(fns),
+            customdata=customdata,
             hovertemplate=(
                 "<b>%{x}</b><br>"
                 "model: " + r.model + "<br>"
-                "run: %{customdata}<br>"
-                "matched: %{y}<extra></extra>"
+                "run: %{customdata[0]}<br>"
+                "status: %{customdata[11]}<br>"
+                "primary: %{customdata[1]} / %{customdata[2]}<br>"
+                "documentation: %{customdata[3]} / %{customdata[4]}<br>"
+                "code: %{customdata[5]} / %{customdata[6]}<br>"
+                "indent violations: %{customdata[7]}<br>"
+                "hallucinated: %{customdata[8]}<br>"
+                "bonus: %{customdata[9]}<br>"
+                "tags: %{customdata[10]}"
+                "<extra></extra>"
             ),
         )
 
@@ -291,9 +415,43 @@ def recall_vs_depth(runs: list[Run], colors: dict[str, str], positions: dict[str
             fn = x["function"]
             if fn not in positions:
                 continue
-            total = x.get("primary_total") or 20
-            pct = x.get("primary_matched", 0) / total * 100
-            pts.append((positions[fn], pct, fn, x.get("primary_matched", 0), total))
+            primary_matched = x.get("primary_matched", 0)
+            primary_total = x.get("primary_total") or 20
+            pct = primary_matched / primary_total * 100
+
+            doc_matched = x.get("doc_matched", 0)
+            doc_total = x.get("doc_total", 0)
+
+            code_matched = x.get("code_matched", 0)
+            code_total = x.get("code_total", 0)
+
+            indent = x.get(
+                "indentation_violations",
+                x.get("reindented", 0),
+            )
+            halluc = x.get("hallucinated", 0)
+            bonus = x.get("bonus_matched", 0)
+
+            tags = ", ".join(x.get("analysis_tags", []))
+            status = "PASS" if x.get("passed") else "FAIL"
+
+            pts.append((
+                positions[fn],   # 0
+                pct,             # 1
+                fn,              # 2
+                primary_matched, # 3
+                primary_total,   # 4
+                doc_matched,     # 5
+                doc_total,       # 6
+                code_matched,    # 7
+                code_total,      # 8
+                indent,          # 9
+                halluc,          # 10
+                bonus,           # 11
+                tags,            # 12
+                status,          # 13
+            ))
+
         if not pts:
             continue
         any_data = True
@@ -302,9 +460,20 @@ def recall_vs_depth(runs: list[Run], colors: dict[str, str], positions: dict[str
         max_line = max(max_line, max(xs))
         ys = [p[1] for p in pts]
         hover = [
-            f"<b>{p[2]}</b><br>line {p[0]:,}<br>"
-            f"{p[3]}/{p[4]} matched ({p[1]:.0f}%)"
-            f"<br>model: {r.model}<br>run: {r.path.stem}"
+            (
+                f"<b>{p[2]}</b><br>"
+                f"source line: {p,}<br>"
+                f"model: {r.model}<br>"
+                f"run: {r.path.stem}<br>"
+                f"status: {p[13]}<br>"
+                f"primary: {p[3]} / {p[4]} ({p[1]}%)<br>"
+                f"documentation: {p[5]} / {p[6]}<br>"
+                f"code: {p[7]} / {p[8]}<br>"
+                f"indent violations: {p[9]}<br>"
+                f"hallucinated: {p[10]}<br>"
+                f"bonus: {p[11]}<br>"
+                f"tags: {p[12]}"
+            )
             for p in pts
         ]
         fig.add_trace(go.Scatter(
@@ -364,22 +533,31 @@ PAGE_CSS = """
 
 
 CHART_PAGES = [
-    # (slug, title, caption, chart_fn_key)
-    ("leaderboard", "Leaderboard",
-     "Total primary lines matched across all tested functions, sorted so the top bar is the best run. "
-     "Each model has its own legend entry — click to hide/show, double-click to isolate. "
-     "`halluc` = lines the model emitted that don't match the expected window.",
-     "leaderboard"),
-    ("per-function", "Per-function score",
-     "One bar per model for each function, sorted left-to-right easiest → hardest. "
-     "Bars above the dashed line passed (≥ 8 of 20 primary lines matched). "
-     "Toggle a model in the legend to remove it from every cluster.",
-     "per_function"),
-    ("recall-vs-position", "Recall vs. position in file",
-     "Each marker is a function placed at its line number in the source. "
-     "If recall falls off as x increases, the model is losing context as depth grows — the "
-     "core finding for sliding-window models. Hover any marker for details.",
-     "recall_vs_position"),
+    (
+        "leaderboard",
+        "Leaderboard",
+        "Total primary lines matched across all tested functions, sorted so the top bar is the best run. "
+        "Each model has its own legend entry; click to hide/show, double-click to isolate. "
+        "`halluc` counts unmatched nonblank lines within the primary scoring window, "
+        "after re-indented lines and known template artifacts have been classified separately.",
+        "leaderboard",
+    ),
+    (
+        "per-function",
+        "Per-function score",
+        "One bar per model for each function, sorted left-to-right easiest to hardest. "
+        "Bars above the dashed line passed (at least 8 of 20 primary lines matched). "
+        "Toggle a model in the legend to remove it from every cluster.",
+        "per_function",
+    ),
+    (
+        "recall-vs-position",
+        "Recall vs. position in file",
+        "Each marker is a function placed at its line number in the source. "
+        "If recall falls as the position increases, the model may be losing context as depth grows. "
+        "Hover over a marker for details.",
+        "recall_vs_position",
+    ),
 ]
 
 
@@ -395,14 +573,14 @@ def write_chart_page(out_path: Path, group: str, slug: str, title: str, caption:
 
     chart_html = pio.to_html(
         fig,
-        include_plotlyjs="cdn",
+        include_plotlyjs="cdn",  # type: ignore[arg-type]
         full_html=False,
         config={"responsive": True, "displaylogo": False},
     )
 
     body = (
         f'<div class="wrap">'
-        f'<header><a href="../index.html">← all corpora</a> · '
+        f'<header><a href="../index.html">&lt;- all corpora</a> · '
         f'<span class="corpus">{group}</span></header>'
         f'<nav>{nav_links}</nav>'
         f'<h1>{title}</h1>'
@@ -428,7 +606,7 @@ def write_corpus_index(out_path: Path, group: str, runs: list[Run],
     )
     body = (
         f'<div class="wrap">'
-        f'<header><a href="../index.html">← all corpora</a></header>'
+        f'<header><a href="../index.html">&lt;- all corpora</a></header>'
         f'<h1>{group}</h1>'
         f'<p class="caption">{len(runs)} run(s) · {queries} queries · '
         f'{len(models)} unique model(s): {", ".join(models)}</p>'

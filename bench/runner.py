@@ -290,12 +290,33 @@ def run_benchmark(
                 {
                     "function": sc.name,
                     "source_file": r.source_path,
+
+                    # Original strict CodeNeedle result
                     "passed": sc.passed,
-                    "error": sc.error,
                     "primary_matched": sc.primary_matched,
                     "primary_total": sc.primary_total,
+
+                    # Documentation content recall
+                    "doc_matched": sc.doc_matched,
+                    "doc_total": sc.doc_total,
+                    "doc_passed": sc.doc_passed,
+
+                    # Implementation content recall
+                    "code_matched": sc.code_matched,
+                    "code_total": sc.code_total,
+                    "code_passed": sc.code_passed,
+
+                    # Formatting and generation diagnostics
+                    "indentation_violations": sc.indentation_violations,
                     "hallucinated": sc.hallucinated,
                     "bonus_matched": sc.bonus_matched,
+
+                    # Analysis metadata
+                    "analysis_tags": sc.analysis_tags,
+                    "template_correction_applied": sc.template_correction_applied,
+
+                    # Request metadata
+                    "error": sc.error,
                     "latency_s": r.latency_s,
                     "prompt_chars": r.prompt_chars,
                     "response": r.response,
