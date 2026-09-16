@@ -34,3 +34,7 @@ configs/models/Qwen2.5-Coder-7B-Instruct-Q4_K_L.toml
 configs/models/NextCoder-7B-Q8_0.toml
 configs/models/gpt-oss-nano.toml
 configs/models/cortana.toml
+configs/models/MiniCPM5-2B-F16.toml
+configs/models/prism-qwen35.toml
+configs/models/Prism-Qwen3.8-27B-Q6K.toml
+configs/models/Prism-Qwen3.8-27B-Q8.toml
